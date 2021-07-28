@@ -20,15 +20,20 @@ for each node and appends it as a new column of the nodes array.
 
 
 ### Specify required files (CT images, Mesh)
-nifti_file = '/home/schlang/Downloads/Fibrosis_Cases1-7/Nicos/Export0000/DICOMIMG/SR0000/SR0000_P_Abd+Pelvis_C_Abdomen_Hx_0_105890.nii'
-#msh_file = '/home/schlang/pool/lung-segmentation/Segmentation_Left-lung-new-optnetgen.msh'
-msh_file = '/home/schlang/pool/lung-segmentation/case1-right-new.msh'
+nifti_ct_file = '/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/01_Phase_I_plan/01_Phase_I_plan_20161010115024_1a.nii'
+nifti_rd_file = '/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/01_Phase_I_plan/01_Phase_I_plan_20161010115024_1.nii'
+### First working case
+# "/home/schlang/pool/LungFibrosisData/Prognosis-LungFibrosis/Export0001/DICOMIMG/SR0000/SR0000_P_Abd+Pelvis_C_Abdomen_Hx_0_105890.nii"
+msh_file = '/home/schlang/Main/Study/PostDoc/InSilico/LungSim/data/LungSegmentations/seg_bococ_p1/seg_bococ_p1_ct0_left.msh'
+### First working case
+# "/home/schlang/Main/Study/PostDoc/InSilico/LungSim/data/LungSegmentations/seg_prog_case1/case1-right-new.msh"
+
 
 ### Case name (used in output files)
-#name="case1-left"
-name="case1-right"
+#name="case1-right"
+name="p1_ct0_left_Phase_I"
 ### Specify output
-out_dir='/home/schlang/pool/lung-segmentation/'
+out_dir='' #/home/schlang/pool/'
 
 ### Obtain nodes coordinates from msh file
 f_msh = open(msh_file,'r')
@@ -51,17 +56,17 @@ else:
 ### Obtain inverse affine matrix
 
 # Load ct images file
-ct_img = nib.load(nifti_file)
+ct_img = nib.load(nifti_ct_file)
 
 # Convert the voxel orientation to RAS
 ct_img = nib.as_closest_canonical(ct_img)
 
-print('Voxel orientation is '+str(nib.aff2axcodes(ct_img.affine)))
-invaff_mat=np.linalg.inv(ct_img.affine)
+print('[CT image] Voxel orientation is '+str(nib.aff2axcodes(ct_img.affine)))
+ct_invaff_mat=np.linalg.inv(ct_img.affine)
 
 # Get data from ct to a numpy array
-ct_na = ct_img.get_fdata(dtype=np.float32)
-print('CT image dimensions', ct_img.shape)
+ct_na = ct_img.get_fdata()
+print('[CT image] Dimensions', ct_img.shape)
 
 # Plot a slice (for testing purposes)
 #slice=ct_na[:,:,66]
@@ -71,7 +76,7 @@ print('CT image dimensions', ct_img.shape)
 ### Populate Hounsfield value for each node
 hf=np.zeros((nodes_size,1))
 for idx, node in enumerate(nodes):
-    v_pos = invaff_mat.dot(np.append(node,1))
+    v_pos = ct_invaff_mat.dot(np.append(node[:3],1))
     hf[idx] = ct_na[tuple(v_pos[:3].astype(int))]
     #print(nodes[0,:],v_pos[:3].astype(int))
 
@@ -79,31 +84,59 @@ nodes=np.append(nodes,hf,axis=1)
 
 ### Populate radiation value for each node
 
-#### Set position of mean depending on nodes coordinates range
-x_min=np.min(nodes[:,0])
-y_min=np.min(nodes[:,1])
-z_min=np.min(nodes[:,2])
-x_max=np.max(nodes[:,0])
-y_max=np.max(nodes[:,1])
-z_max=np.max(nodes[:,2])
+# Load radiation dose images file
+rd_img = nib.load(nifti_rd_file)
 
-x_var=(x_max-x_min)
-y_var=(y_max-y_min)
-z_var=(z_max-z_min)
-x_mean=x_var/2 + x_min
-y_mean=y_var/4 + y_min
-z_mean=z_var/3 + z_min
-#print(x_max,y_max,z_max)
+# Convert the voxel orientation to RAS
+rd_img = nib.as_closest_canonical(rd_img)
 
-x_var_coeff,y_var_coeff,z_var_coeff=1,0.5,0.2
+print('[RD image] Voxel orientation is '+str(nib.aff2axcodes(rd_img.affine)))
+rd_aff_mat = rd_img.affine
+# IMPORTANT: When converting radiation dose dicom to nifty, slice thickness is not
+# transferred. We set it to 3 mm which is used in BOCOC images but this is not
+# applicaple everywhere
+if rd_aff_mat[2,2] == 1:
+    rd_aff_mat[2,2] = 3
+rd_invaff_mat=np.linalg.inv(rd_aff_mat)
 
-ra=np.zeros((nodes_size,1))
-for index, node in enumerate(nodes):
-    ra[index]=math.exp(-((node[0]-x_mean)/(x_var*x_var_coeff))**2) * math.exp(-((node[1]-y_mean)/(y_var*y_var_coeff))**2) * math.exp(-((node[2]-z_mean)/(z_var*z_var_coeff))**2)
-    ra[index]*=70
+# Get data from ct to a numpy array
+rd_na = rd_img.get_fdata()
+print('[RD image] Dimensions', rd_img.shape)
 
-#print(np.max(ra))
-nodes=np.append(nodes,ra,axis=1)
+rd=np.zeros((nodes_size,1))
+for idx, node in enumerate(nodes):
+    v_pos = rd_invaff_mat.dot(np.append(node[:3],1))
+    rd[idx] = rd_na[tuple(v_pos[:3].astype(int))]
+    rd[idx] = rd[idx] // 200 # IMPORTANT: This was found to be required to match Slicer data
+    #print(nodes[0,:],v_pos[:3].astype(int))
+
+ARTIFICIAL_RA=False
+if ARTIFICIAL_RA:
+    #### Set position of mean depending on nodes coordinates range
+    x_min=np.min(nodes[:,0])
+    y_min=np.min(nodes[:,1])
+    z_min=np.min(nodes[:,2])
+    x_max=np.max(nodes[:,0])
+    y_max=np.max(nodes[:,1])
+    z_max=np.max(nodes[:,2])
+    
+    x_var=(x_max-x_min)
+    y_var=(y_max-y_min)
+    z_var=(z_max-z_min)
+    x_mean=x_var/2 + x_min
+    y_mean=y_var/4 + y_min
+    z_mean=z_var/3 + z_min
+    #print(x_max,y_max,z_max)
+
+    x_var_coeff,y_var_coeff,z_var_coeff=1,0.5,0.2
+    
+    rd=np.zeros((nodes_size,1))
+    for index, node in enumerate(nodes):
+        rd[index]=math.exp(-((node[0]-x_mean)/(x_var*x_var_coeff))**2) * math.exp(-((node[1]-y_mean)/(y_var*y_var_coeff))**2) * math.exp(-((node[2]-z_mean)/(z_var*z_var_coeff))**2)
+        rd[index]*=70
+
+print('Maximum radiation value:', np.max(rd))
+nodes=np.append(nodes,rd,axis=1)
 
 ### Populate tumour value for each node
 tm=np.zeros((nodes_size,1))
