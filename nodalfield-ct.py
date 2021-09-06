@@ -1,55 +1,55 @@
 import nibabel as nib
 import numpy as np
 import math
+import os.path
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from mpl_toolkits.mplot3d import axes3d
 
 """ 
-This script creates an array nx3 of nodes cordinates (n is number of
-nodes). Then it determines the hounsfield unit, radiation value and tumour value
-for each node and appends it as a new column of the nodes array.
+
+This script creates a nodes array nx3 (n: number of nodes) of nodal coordinates
+and appends columns for 4 variables. The variables are the hounsfield unit,
+broad radiation value (total), focused radiation value (total), and tumour
+value.
+
+The variable values are obtained from a corresponding image by quering the pixel
+value at each nodal coordinate. These are stored into an array (size n) and
+appended to the main solution array (nx8 once completed) which is then outputed
+(only variable values are output, not coordinates).
 
 > Hounsfield is determined from the CT image. Each pixel of the CT images is
   imported in a 3D array. Then using the inverse affine matrix we can convert
   world coordinates to pixel coordinates to extract the HU.
 
-> Radiation field is obtained from a different image file in a similar way to
-  Hounsfield. There are two such images corresponding to phase 1 and phase 2 of
-  radiotherapy.
+> Radiation field is obtained from separate image files in a similar way to
+  Hounsfield. There are two such images corresponding to phase 1 (broad) and
+  phase 2 (focused) radiotherapy sessions. The first radiation field is the
+  total value for broad radiation and the second is the total radiation values
+  for the focused radiotherapy.
 
 > Cancer field is zero everywhere for now.
 """
 
+### Specify case details
+patient='01'
+patientlung='right'
 
-### Specify required files (CT images, Mesh)
-nifti_ct_file = '/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/01_Phase_I_plan/01_Phase_I_plan_20161010115024_1a.nii'
-#'/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/08_Phase_I_plan/08_Phase_I_plan_20130111124359_1a.nii'
-#'/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/07_Phase_I_plan/07_Phase_I_plan_20150320093218_1.nii'
-#'/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/07_Phase_I_plan/07_Phase_I_plan_20160104125035_1a.nii'
-#'/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/05_Phase_I_plan/05_Phase_I_plan_20150525082852_1a.nii'
-nifti_rd_files = ['/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/01_Phase_I_plan/01_Phase_I_plan_20161010115024_1.nii',
-                  '/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/01_Phase_II_plan/01_Phase_II_plan_20161010115024_1.nii']
-#['/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/08_Phase_I_plan/08_Phase_I_plan_20130111124359_1.nii',
-#'/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/08_Phase_II_plan/08_Phase_II_plan_20130111124359_1.nii']
-#['/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/01_Phase_I_plan/01_Phase_I_plan_20161010115024_1.nii',
-#                  '/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/01_Phase_II_plan/01_Phase_II_plan_20161010115024_1.nii']
-#['/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/08_Phase_I_plan/08_Phase_I_plan_20130111124359_1.nii',
-#                  '/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/08_Phase_II_plan/08_Phase_II_plan_20130111124359_1.nii']
-#['/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/07_Phase_I_plan/07_Phase_I_plan_20150320093218_1a.nii',
-#                  '/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/07_Phase_II_plan/07_Phase_II_plan_20150320093218_1.nii']
-#['/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/05_Phase_I_plan/05_Phase_I_plan_20150525082852_1.nii',
-#                 '/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/05_Phase_II_plan/05_Phase_II_plan_20150525082852_1.nii']
-### First working case
-# "/home/schlang/pool/LungFibrosisData/Prognosis-LungFibrosis/Export0001/DICOMIMG/SR0000/SR0000_P_Abd+Pelvis_C_Abdomen_Hx_0_105890.nii"
-msh_file = '/home/schlang/Main/Study/PostDoc/InSilico/LungSim/data/LungSegmentations/seg_bococ_p1/seg_bococ_p1_ct0_right.msh'
-### First working case
-# "/home/schlang/Main/Study/PostDoc/InSilico/LungSim/data/LungSegmentations/seg_prog_case1/case1-right-new.msh"
+# right: 01, 06, 08
+# left: 05, 07, 09
 
+databasepath = '/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/'
+pI_dir=databasepath+patient+'_Phase_I_plan/'
+pII_dir=databasepath+patient+'_Phase_II_plan/'
+### Required files (CT images, Mesh)
+nifti_ct_file = pI_dir+patient+'_Phase_I_plan_1a.nii'
+nifti_rd_files = [pI_dir+patient+'_Phase_I_plan_1.nii',pII_dir+patient+'_Phase_II_plan_1.nii']
+segbasepath='/home/schlang/Main/Study/PostDoc/InSilico/LungSim/data/LungSegmentations/'
+nifti_tm_file = segbasepath+'seg_bococ_p'+patient+'/seg_bococ_p'+patient+'_ct0_tumour.nii'
+msh_file = segbasepath+'seg_bococ_p'+patient+'/seg_bococ_p'+patient+'_ct0_'+patientlung+'.msh'
 
 ### Case name (used in output files)
-#name="case1-right"
-name="p1_ct0_right"
+name='p'+patient+'_ct0_'+patientlung
 ### Specify output
 out_dir='' #/home/schlang/pool/'
 
@@ -71,15 +71,16 @@ if nodes_size == nodes[:,0].size:
 else:
     print("ERROR: Number of imported nodes does not match nodes specified in msh file")
 
-### Obtain inverse affine matrix
+#### HOUNSFIELD ###
 
 # Load ct images file
 ct_img = nib.load(nifti_ct_file)
 
 # Convert the voxel orientation to RAS
 ct_img = nib.as_closest_canonical(ct_img)
-
 print('[CT image] Voxel orientation is '+str(nib.aff2axcodes(ct_img.affine)))
+
+### Obtain inverse affine matrix
 ct_invaff_mat=np.linalg.inv(ct_img.affine)
 
 # Get data from ct to a numpy array
@@ -98,9 +99,11 @@ for idx, node in enumerate(nodes):
     hf[idx] = ct_na[tuple(v_pos[:3].astype(int))]
     #print(nodes[0,:],v_pos[:3].astype(int))
 
+print('[CT image] Maximum value:', np.max(hf))
+print('[CT image] Minimum value:', np.min(hf))
 nodes=np.append(nodes,hf,axis=1)
 
-### Populate radiation value for each node
+### RADIATION ###
 
 img=0
 # Load radiation dose images file
@@ -113,31 +116,35 @@ for nifti_rd_file in nifti_rd_files:
 
     print('[RD image '+str(img)+'] Voxel orientation is '+str(nib.aff2axcodes(rd_img.affine)))
     rd_aff_mat = rd_img.affine
-    # IMPORTANT: When converting radiation dose dicom to nifty, slice thickness is not
-    # transferred. We set it to 3 mm which is used in BOCOC images but this is not
-    # applicaple everywhere
+    # IMPORTANT: When converting radiation dose dicom to nifty, slice thickness
+    # is sometimes not transferred. We set it to 3 mm which is used in BOCOC
+    # images but this is not applicaple everywhere
     if rd_aff_mat[2,2] == 1:
         rd_aff_mat[2,2] = 3
+        
     rd_invaff_mat=np.linalg.inv(rd_aff_mat)
 
     # Get data from ct to a numpy array
     rd_na = rd_img.get_fdata()
-    print('[RD image] Dimensions', rd_img.shape)
+    print('[RD image '+str(img)+'] Dimensions', rd_img.shape)
 
     rd=np.zeros((nodes_size,1))
     for idx, node in enumerate(nodes):
         v_pos = rd_invaff_mat.dot(np.append(node[:3],1))
         rd[idx] = rd_na[tuple(v_pos[:3].astype(int))]
-        # IMPORTANT: This was found to be required to match Slicer data
+        # IMPORTANT: A scalling of the pixel values was found to be required to
+        # match Slicer data (not sure of the cause)
         if img == 0:
             rd[idx] = rd[idx] / 197.49 #/ 198.5 (for p8)
         elif img == 1:
             rd[idx] = rd[idx] / 694.07 #/ 81.111 (for p8)
             #print(nodes[0,:],v_pos[:3].astype(int))
-    print('Maximum radiation value:', np.max(rd))
+    print('[RD image '+str(img)+'] Maximum value:', np.max(rd))
+    print('[RD image '+str(img)+'] Minimum value:', np.min(rd))
     nodes=np.append(nodes,rd,axis=1)
     img=img+1
 
+# Code for creating mock radiation field (not used)
 ARTIFICIAL_RA=False
 if ARTIFICIAL_RA:
     #### Set position of mean depending on nodes coordinates range
@@ -163,15 +170,41 @@ if ARTIFICIAL_RA:
         rd[index]=math.exp(-((node[0]-x_mean)/(x_var*x_var_coeff))**2) * math.exp(-((node[1]-y_mean)/(y_var*y_var_coeff))**2) * math.exp(-((node[2]-z_mean)/(z_var*z_var_coeff))**2)
         rd[index]*=70
 
-### Populate tumour value for each node
+### TUMOUR ####
 tm=np.zeros((nodes_size,1))
+
+if os.path.isfile(nifti_tm_file):
+    # Load ct images file
+    tm_img = nib.load(nifti_tm_file)
+
+    # Convert the voxel orientation to RAS
+    tm_img = nib.as_closest_canonical(tm_img)
+    print('[TM image] Voxel orientation is '+str(nib.aff2axcodes(tm_img.affine)))
+
+    ### Obtain inverse affine matrix
+    tm_invaff_mat=np.linalg.inv(tm_img.affine)
+
+    # Get data from tm to a numpy array
+    tm_na = tm_img.get_fdata()
+    print('[TM image] Dimensions', tm_img.shape)
+
+    ### Populate tumour value for each node
+    for idx, node in enumerate(nodes):
+        v_pos = tm_invaff_mat.dot(np.append(node[:3],1))
+        tm[idx] = tm_na[tuple(v_pos[:3].astype(int))]
+
+else:
+    print("ERROR: Tumour segmentation file not found! Output is all zeros")
+
+#print('[TM image] Maximum value:', np.max(tm))
+#print('[TM image] Minimum value:', np.min(tm))
 nodes=np.append(nodes,tm,axis=1)
 
 ### Output to file
 nodal_field_file=out_dir+name+'-nodal_field.dat'
 f_out = open(nodal_field_file, 'w')
 f_out.write('4\n\n')
-f_out.write('v02 a00 a01 v00\n\n')
+f_out.write('v02 a01 a02 v00\n\n')
 for node in nodes:
     f_out.write(' '.join(map(str,node[3:]))+'\n')
     # output node coordinates as well
