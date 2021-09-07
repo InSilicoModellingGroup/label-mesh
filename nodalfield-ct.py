@@ -38,20 +38,18 @@ patientlung='right'
 # right: 01, 06, 08
 # left: 05, 07, 09
 
-databasepath = '/home/schlang/pool/LungFibrosisData/BOCOC-LungFibrosis-Baseline/'
-pI_dir=databasepath+patient+'_Phase_I_plan/'
-pII_dir=databasepath+patient+'_Phase_II_plan/'
+basepath='/home/schlang/Main/Study/PostDoc/InSilico/LungSim/data/LungSegmentations/seg_bococ_p'+patient+'/'
 ### Required files (CT images, Mesh)
-nifti_ct_file = pI_dir+patient+'_Phase_I_plan_1a.nii'
-nifti_rd_files = [pI_dir+patient+'_Phase_I_plan_1.nii',pII_dir+patient+'_Phase_II_plan_1.nii']
-segbasepath='/home/schlang/Main/Study/PostDoc/InSilico/LungSim/data/LungSegmentations/'
-nifti_tm_file = segbasepath+'seg_bococ_p'+patient+'/seg_bococ_p'+patient+'_ct0_tumour.nii'
-msh_file = segbasepath+'seg_bococ_p'+patient+'/seg_bococ_p'+patient+'_ct0_'+patientlung+'.msh'
+nifti_ct_file = basepath+patient+'_ct0.nii'
+nifti_rd_files = [basepath+patient+'_phase_I_1_RTdose.nii',basepath+patient+'_phase_II_1_RTdose.nii']
+nifti_tm_file = basepath+patient+'_ct0_tumour.nii'
+msh_file = basepath+'seg_bococ_p'+patient+'_ct0_'+patientlung+'.msh'
 
 ### Case name (used in output files)
 name='p'+patient+'_ct0_'+patientlung
 ### Specify output
 out_dir='' #/home/schlang/pool/'
+warnings=0
 
 ### Obtain nodes coordinates from msh file
 f_msh = open(msh_file,'r')
@@ -79,6 +77,7 @@ ct_img = nib.load(nifti_ct_file)
 # Convert the voxel orientation to RAS
 ct_img = nib.as_closest_canonical(ct_img)
 print('[CT image] Voxel orientation is '+str(nib.aff2axcodes(ct_img.affine)))
+print('[CT image] Voxel size', ct_img.header.get_zooms())
 
 ### Obtain inverse affine matrix
 ct_invaff_mat=np.linalg.inv(ct_img.affine)
@@ -86,7 +85,6 @@ ct_invaff_mat=np.linalg.inv(ct_img.affine)
 # Get data from ct to a numpy array
 ct_na = ct_img.get_fdata()
 print('[CT image] Dimensions', ct_img.shape)
-
 # Plot a slice (for testing purposes)
 #slice=ct_na[:,:,66]
 #plt.imshow(slice.T, cmap='gray', origin='lower')
@@ -97,6 +95,10 @@ hf=np.zeros((nodes_size,1))
 for idx, node in enumerate(nodes):
     v_pos = ct_invaff_mat.dot(np.append(node[:3],1))
     hf[idx] = ct_na[tuple(v_pos[:3].astype(int))]
+    if hf[idx] < -999.99: # BOCOC images all have minHU=-1024
+        print('WARNING: Hounsfield value for node '+str(idx)+' is '+str(hf[idx])+' (below -1000). Set to -999')
+        hf[idx]=-999
+        warnings+=1
     #print(nodes[0,:],v_pos[:3].astype(int))
 
 print('[CT image] Maximum value:', np.max(hf))
@@ -115,6 +117,7 @@ for nifti_rd_file in nifti_rd_files:
     rd_img = nib.as_closest_canonical(rd_img)
 
     print('[RD image '+str(img)+'] Voxel orientation is '+str(nib.aff2axcodes(rd_img.affine)))
+    print('[RD image '+str(img)+'] Voxel size', rd_img.header.get_zooms())
     rd_aff_mat = rd_img.affine
     # IMPORTANT: When converting radiation dose dicom to nifty, slice thickness
     # is sometimes not transferred. We set it to 3 mm which is used in BOCOC
@@ -132,17 +135,18 @@ for nifti_rd_file in nifti_rd_files:
     for idx, node in enumerate(nodes):
         v_pos = rd_invaff_mat.dot(np.append(node[:3],1))
         rd[idx] = rd_na[tuple(v_pos[:3].astype(int))]
-        # IMPORTANT: A scalling of the pixel values was found to be required to
-        # match Slicer data (not sure of the cause)
-        if img == 0:
-            rd[idx] = rd[idx] / 197.49 #/ 198.5 (for p8)
-        elif img == 1:
-            rd[idx] = rd[idx] / 694.07 #/ 81.111 (for p8)
-            #print(nodes[0,:],v_pos[:3].astype(int))
+        # When converting RT DICOM image to nifty using dcm2niix, it was found
+        # that it required scalling of the pixel values in order to match Slicer
+        # data (scalling was different for some images). Now I export the RT
+        # dose to regular DICOM before converting to nifty to avoid the issue.
+        if rd[idx] < 0:
+            print('WARNING: Radiation value for node '+str(idx)+' is '+str(rd[idx])+' (negative). Set to 0')
+            rd[idx]=0
+            warnings+=1
     print('[RD image '+str(img)+'] Maximum value:', np.max(rd))
     print('[RD image '+str(img)+'] Minimum value:', np.min(rd))
     nodes=np.append(nodes,rd,axis=1)
-    img=img+1
+    img+=1
 
 # Code for creating mock radiation field (not used)
 ARTIFICIAL_RA=False
@@ -180,6 +184,7 @@ if os.path.isfile(nifti_tm_file):
     # Convert the voxel orientation to RAS
     tm_img = nib.as_closest_canonical(tm_img)
     print('[TM image] Voxel orientation is '+str(nib.aff2axcodes(tm_img.affine)))
+    print('[TM image] Voxel size', tm_img.header.get_zooms())
 
     ### Obtain inverse affine matrix
     tm_invaff_mat=np.linalg.inv(tm_img.affine)
@@ -194,7 +199,8 @@ if os.path.isfile(nifti_tm_file):
         tm[idx] = tm_na[tuple(v_pos[:3].astype(int))]
 
 else:
-    print("ERROR: Tumour segmentation file not found! Output is all zeros")
+    print("WARNING: Tumour segmentation file not found! Output is all zeros")
+    warnings+=1
 
 #print('[TM image] Maximum value:', np.max(tm))
 #print('[TM image] Minimum value:', np.min(tm))
@@ -212,3 +218,4 @@ for node in nodes:
 f_out.close()
 
 print("The nodal field has been successfully output at", nodal_field_file)
+if warnings: print('There have been '+str(warnings)+' WARNINGS')
