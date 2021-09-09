@@ -38,17 +38,17 @@ patientlung='right'
 # right: 01, 06, 08
 # left: 05, 07, 09
 
-basepath='/home/schlang/Main/Study/PostDoc/InSilico/LungSim/data/LungSegmentations/seg_bococ_p'+patient+'/'
+basepath='./LungSegmentations/seg_bococ_p'+patient+'/'
 ### Required files (CT images, Mesh)
 nifti_ct_file = basepath+patient+'_ct0.nii'
-nifti_rd_files = [basepath+patient+'_phase_I_1_RTdose.nii',basepath+patient+'_phase_II_1_RTdose.nii']
+nifti_rd_files = [basepath+patient+'_ct0_phase_I.nii',basepath+patient+'_ct0_phase_II.nii']
 nifti_tm_file = basepath+patient+'_ct0_tumour.nii'
 msh_file = basepath+'seg_bococ_p'+patient+'_ct0_'+patientlung+'.msh'
 
 ### Case name (used in output files)
 name='p'+patient+'_ct0_'+patientlung
 ### Specify output
-out_dir='' #/home/schlang/pool/'
+out_dir='' 
 warnings=0
 
 ### Obtain nodes coordinates from msh file
@@ -129,16 +129,20 @@ for nifti_rd_file in nifti_rd_files:
 
     # Get data from ct to a numpy array
     rd_na = rd_img.get_fdata()
+    print('[RD array '+str(img)+'] Maximum value:', np.max(rd_na))
     print('[RD image '+str(img)+'] Dimensions', rd_img.shape)
 
-    rd=np.zeros((nodes_size,1))
+    rd=np.zeros((nodes_size,1), dtype=np.double)
     for idx, node in enumerate(nodes):
         v_pos = rd_invaff_mat.dot(np.append(node[:3],1))
         rd[idx] = rd_na[tuple(v_pos[:3].astype(int))]
         # When converting RT DICOM image to nifty using dcm2niix, it was found
         # that it required scalling of the pixel values in order to match Slicer
-        # data (scalling was different for some images). Now I export the RT
-        # dose to regular DICOM before converting to nifty to avoid the issue.
+        # data (scalling was different for some images). 
+        if img == 0:
+            rd[idx] /= 198.467765570619
+        elif img == 1:
+            rd[idx] /= 694.485345995242 # 198.795960642154 # for p08
         if rd[idx] < 0:
             print('WARNING: Radiation value for node '+str(idx)+' is '+str(rd[idx])+' (negative). Set to 0')
             rd[idx]=0
