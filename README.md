@@ -1,8 +1,12 @@
 ### Description
 
-Script for populating values for the nodes of a computational mesh (in .msh
-format) using data from medical images (in nifti format). It is able to fill-in
-Hounsfield units and radiation distribution from separate medical images.
+Script for populating values for the nodes and labelling the elements of a computational mesh (in .msh
+format) using data from medical images (in nifti format). This implementation is
+particular to the PROTEAS project for brain metastatic cancer. It populates the
+initial values for all variables of the model in one output file as well as Hounsfield and
+radiation dosage units in a separate output file. Last, it also labels the
+elements of the given mesh depending on whether they belong to while or grey
+matter regions and outputs a labeled version of the mesh file.
 
 More details about how the script works can be found in the .py file.
 
@@ -10,16 +14,16 @@ More details about how the script works can be found in the .py file.
 
 In the .py file, the user needs to specify
 
-* Path of folder with data (`basepath`)
+* Path of folder with patient data (`basepath`)
 * Names of nifti images (`nifti_*_file`)
 * Name of msh file (`msh_file`)
 
-Then run `python nodalfield-msh.py`
+Then run `python label-mesh.py`
 
 ### Example
 
-Data for one case are included in directory `p01`
+Data for one case are included in directory `RP02`
 
-After running the script, the output can be verified using the reference file
-`p01_ct0_right-nodal_field.dat.verify`
+After running the script, the output can be verified using the reference files
+`*.verify`
 
