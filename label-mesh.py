@@ -52,6 +52,7 @@ nifti_brain_MRI = basepath+'brain_t1.nii'
 nifti_brain_RT = basepath+'brain_RD.nii'
 
 msh_file = basepath+'seg_brain.msh'
+mesh_char_len = 4
 
 ### Case name (used in output files)
 name='RP02-test'
@@ -126,19 +127,39 @@ cancer_na = img_cancer.get_fdata()
 hos,tum,nec,oed=[np.zeros((nodes_size,1)) for _ in range(4)]
 vsc=np.ones((nodes_size,1))
 
+### Labels: 1=nec, 2=oed, 4=tum
 for idx, node in enumerate(nodes):
-    v_pos = cancer_invaff_mat.dot(np.append(node[:3],1))
-    label = cancer_na[tuple(v_pos[:3].astype(int))]
-    if label == 1:
-        nec[idx]=1
-        vsc[idx]=0
-    elif label == 4:
-        tum[idx]=1
-    else:
-        hos[idx]=1
-    if label == 2:
-        # print(idx,node,v_pos[:3].astype(int),label)
-        oed[idx]=1
+    # Create a cube around each node of size mesh_char_len and check each vertix
+    # of this cube
+    cube_vers = np.full((8,3),node[:3])
+    for i in range(4):
+        cube_vers[i][0]   += -0.5*mesh_char_len
+        cube_vers[i+4][0] +=  0.5*mesh_char_len
+    for i in range(2):
+        cube_vers[i][1]   += -0.5*mesh_char_len
+        cube_vers[i+2][1] +=  0.5*mesh_char_len
+        cube_vers[i+4][1] += -0.5*mesh_char_len
+        cube_vers[i+6][1] +=  0.5*mesh_char_len
+    for i in range(8):
+        if i % 2 == 0:
+            cube_vers[i][2] += -0.5*mesh_char_len
+        else:
+            cube_vers[i][2] +=  0.5*mesh_char_len
+    for ver in cube_vers:
+        v_pos = cancer_invaff_mat.dot(np.append(ver,1))
+        label = cancer_na[tuple(v_pos[:3].astype(int))]
+        if label == 1:
+            nec[idx]=1
+            vsc[idx]=0
+            break
+        elif label == 4:
+            tum[idx]=1
+            break
+        else:
+            hos[idx]=1
+            if label == 2:
+                # print(idx,node,v_pos[:3].astype(int),label)
+                oed[idx]=1
         
 nodes=np.concatenate((nodes,hos,tum,nec,vsc,oed),axis=1)
 
