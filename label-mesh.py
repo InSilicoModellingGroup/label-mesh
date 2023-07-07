@@ -33,7 +33,7 @@ appended to the main solution array (nx8 once completed) which is then outputed
 3. Vascular cells are in all regions except in the necrotic region
 4. Oedema region is set according to segmentation and overlap with other cell regions
 
-> Hounsfield is obtained from the MRI image in the same way
+> MRI values is obtained from the T1 weighted image in the same way
 
 > Radiation field is obtained from separate image file in the same way
 
@@ -48,8 +48,8 @@ whether they belong to the region of white matter (30) or grey matter (40).
 basepath='RP02/'
 nifti_brain = basepath+'brain_mask.nii'
 nifti_cancer = basepath+'tumour_mask.nii'
-nifti_brain_RT = None #basepath+'brain_RT.nii'
-nifti_brain_MRI = None #basepath+'brain_MRI.nii'
+nifti_brain_MRI = basepath+'brain_t1.nii'
+nifti_brain_RT = basepath+'brain_RD.nii'
 
 msh_file = basepath+'seg_brain.msh'
 
@@ -142,41 +142,43 @@ for idx, node in enumerate(nodes):
         
 nodes=np.concatenate((nodes,hos,tum,nec,vsc,oed),axis=1)
 
-### HOUNSFIELD ###
+### MRI ###
 
-hf=np.zeros((nodes_size,1), dtype=np.double)
+mri=np.zeros((nodes_size,1), dtype=np.double)
 if nifti_brain_MRI is None:
-    print('WARNING: MRI image not provided. Hounsfield values set to 0')
+    print('WARNING: MRI image not provided. MRI values set to linear dependance on position (x+y+z).')
     warnings+=1
+    for idx, node in enumerate(nodes):
+        mri[idx] = node[0]+node[1]+node[2]
 else:
-    img_HF = nib.load(nifti_brain_MRI)
+    img_MRI = nib.load(nifti_brain_MRI)
     # Convert the voxel orientation to RAS
-    img_HF = nib.as_closest_canonical(img_HF)
+    img_MRI = nib.as_closest_canonical(img_MRI)
 
-    print('[MRI image] Voxel orientation is '+str(nib.aff2axcodes(img_HF.affine)))
-    print('[MRI image] Voxel size', img_HF.header.get_zooms())
-    hf_aff_mat = img_HF.affine
-    hf_invaff_mat=np.linalg.inv(rtd_aff_mat)
+    print('[MRI image] Voxel orientation is '+str(nib.aff2axcodes(img_MRI.affine)))
+    print('[MRI image] Voxel size', img_MRI.header.get_zooms())
+    mri_aff_mat = img_MRI.affine
+    mri_invaff_mat=np.linalg.inv(mri_aff_mat)
 
     # Get data from image to a numpy array
-    hf_na = img_HF.get_fdata()
-    print('[MRI image] Maximum value:', np.max(hf_na))
-    print('[MRI image] Dimensions', img_HF.shape)
+    mri_na = img_MRI.get_fdata()
+    print('[MRI image] Dimensions', img_MRI.shape)
 
     for idx, node in enumerate(nodes):
-        v_pos = hf_invaff_mat.dot(np.append(node[:3],1))
-        hf[idx] = hf_na[tuple(v_pos[:3].astype(int))]
-        if hf[idx] < -1000:
+        v_pos = mri_invaff_mat.dot(np.append(node[:3],1))
+        mri[idx] = mri_na[tuple(v_pos[:3].astype(int))]
+        if mri[idx] < -1000:
             print('WARNING: Hounsfield value for node '+str(idx)+' is '+str(rd[idx])+'. Set to -999.999.')
-            hf[idx]=-999.999
+            mri[idx]=-999.999
             warnings+=1
             
-print('[MRI image] Maximum value:', np.max(hf))
-print('[MRI image] Minimum value:', np.min(hf))
-nodes=np.append(nodes,hf,axis=1)
+print('[MRI image] Maximum value:', np.max(mri))
+print('[MRI image] Minimum value:', np.min(mri))
+nodes=np.append(nodes,mri,axis=1)
 
 ### RADIATION ###
 
+ARTIFICIAL_RA=False
 rtd=np.zeros((nodes_size,1), dtype=np.double)
 if nifti_brain_RT is None:
     print('WARNING: Radiation dosage image not provided. Artificial radiation field is applied.')
@@ -201,7 +203,6 @@ else:
 
     # Get data from image to a numpy array
     rtd_na = img_RTD.get_fdata()
-    print('[RTD image] Maximum value:', np.max(rtd_na))
     print('[RTD image] Dimensions', img_RTD.shape)
     
     for idx, node in enumerate(nodes):
@@ -251,7 +252,7 @@ f_out.close()
 
 nodal_field_file_aux=out_dir+name+'-nodal_field_aux.dat'
 f_out = open(nodal_field_file_aux, 'w')
-f_out.write('# hf rtd\n')
+f_out.write('# mri rtd\n')
 for node in nodes:
     f_out.write(' '.join(map(str,node[8:]))+'\n')
 f_out.close()
