@@ -52,7 +52,7 @@ nifti_brain_MRI = basepath+'brain_t1.nii'
 nifti_brain_RT = basepath+'brain_RD.nii'
 
 msh_file = basepath+'seg_brain.msh'
-mesh_char_len = 4
+mesh_char_len = 3.5
 
 ### Case name (used in output files)
 name='RP02-test'
@@ -124,43 +124,51 @@ cancer_na = img_cancer.get_fdata()
 #plt.show()
 
 ### Populate variables value for each node
-hos,tum,nec,oed=[np.zeros((nodes_size,1)) for _ in range(4)]
-vsc=np.ones((nodes_size,1))
+tum,nec,oed=[np.zeros((nodes_size,1)) for _ in range(3)]
+hos,vsc=[np.ones((nodes_size,1)) for _ in range(2)]
 
 ### Labels: 1=nec, 2=oed, 4=tum
 for idx, node in enumerate(nodes):
     # Create a cube around each node of size mesh_char_len and check each vertix
     # of this cube
-    cube_vers = np.full((8,3),node[:3])
-    for i in range(4):
-        cube_vers[i][0]   += -0.5*mesh_char_len
-        cube_vers[i+4][0] +=  0.5*mesh_char_len
-    for i in range(2):
-        cube_vers[i][1]   += -0.5*mesh_char_len
-        cube_vers[i+2][1] +=  0.5*mesh_char_len
-        cube_vers[i+4][1] += -0.5*mesh_char_len
-        cube_vers[i+6][1] +=  0.5*mesh_char_len
-    for i in range(8):
-        if i % 2 == 0:
-            cube_vers[i][2] += -0.5*mesh_char_len
-        else:
-            cube_vers[i][2] +=  0.5*mesh_char_len
-    for ver in cube_vers:
-        v_pos = cancer_invaff_mat.dot(np.append(ver,1))
-        label = cancer_na[tuple(v_pos[:3].astype(int))]
-        if label == 1:
-            nec[idx]=1
-            vsc[idx]=0
+    cube_sizes = np.array([0.05*mesh_char_len,0.5*mesh_char_len,mesh_char_len])
+    for cube_size in cube_sizes:
+        cube_vers = np.full((8,3),node[:3])
+        for i in range(4):
+            cube_vers[i][0]   += -0.5*cube_size
+            cube_vers[i+4][0] +=  0.5*cube_size
+        for i in range(2):
+            cube_vers[i][1]   += -0.5*cube_size
+            cube_vers[i+2][1] +=  0.5*cube_size
+            cube_vers[i+4][1] += -0.5*cube_size
+            cube_vers[i+6][1] +=  0.5*cube_size
+        for i in range(8):
+            if i % 2 == 0:
+                cube_vers[i][2] += -0.5*cube_size
+            else:
+                cube_vers[i][2] +=  0.5*cube_size
+        for ver in cube_vers:
+            v_pos = cancer_invaff_mat.dot(np.append(ver,1))
+            label = cancer_na[tuple(v_pos[:3].astype(int))]
+            if label == 4:
+                tum[idx]=1
+                hos[idx]=0
+                break
+            elif label == 1:
+                nec[idx]=1
+                vsc[idx]=0
+                hos[idx]=0
+                break
+            else:
+                if label == 2:
+                    # print(idx,node,v_pos[:3].astype(int),label)
+                    oed[idx]=1
+        if tum[idx] == 1:
             break
-        elif label == 4:
-            tum[idx]=1
-            break
-        else:
-            hos[idx]=1
-            if label == 2:
-                # print(idx,node,v_pos[:3].astype(int),label)
-                oed[idx]=1
-        
+        if hos[idx] + tum[idx] + nec[idx] > 1.0:
+            print("ERROR: Total volume fraction is greater than 1. ",hos[idx] + tum[idx] + nec[idx] )
+            exit()
+
 nodes=np.concatenate((nodes,hos,tum,nec,vsc,oed),axis=1)
 
 ### MRI ###
