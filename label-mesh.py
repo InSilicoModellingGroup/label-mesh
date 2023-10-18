@@ -124,8 +124,9 @@ cancer_na = img_cancer.get_fdata()
 #plt.show()
 
 ### Populate variables value for each node
-tum,nec,oed=[np.zeros((nodes_size,1)) for _ in range(3)]
-hos,vsc=[np.ones((nodes_size,1)) for _ in range(2)]
+tum,hos,nec,vsc,oed=[np.zeros((nodes_size,1)) for _ in range(5)]
+hos.fill(0.9)
+vsc.fill(0.1)
 
 ### Labels: 1=nec, 2=oed, 4=tum
 for idx, node in enumerate(nodes):
@@ -151,23 +152,24 @@ for idx, node in enumerate(nodes):
             v_pos = cancer_invaff_mat.dot(np.append(ver,1))
             label = cancer_na[tuple(v_pos[:3].astype(int))]
             if label == 4:
-                tum[idx]=1
+                tum[idx]=0.9
                 hos[idx]=0
+                nec[idx]=0
                 break
             elif label == 1:
                 nec[idx]=1
-                vsc[idx]=0
                 hos[idx]=0
+                vsc[idx]=0
                 break
             else:
                 if label == 2:
                     # print(idx,node,v_pos[:3].astype(int),label)
                     oed[idx]=1
-        if tum[idx] == 1:
+        if tum[idx] > 0.9-1e-6:
             break
-        if hos[idx] + tum[idx] + nec[idx] > 1.0:
-            print("ERROR: Total volume fraction is greater than 1. ",hos[idx] + tum[idx] + nec[idx] )
-            exit()
+    if hos[idx] + tum[idx] + vsc[idx] + nec[idx] > 1.0:
+        print("ERROR: Total volume fraction is greater than 1. ",hos[idx] + tum[idx] + nec[idx] )
+        exit()
 
 nodes=np.concatenate((nodes,hos,tum,nec,vsc,oed),axis=1)
 
