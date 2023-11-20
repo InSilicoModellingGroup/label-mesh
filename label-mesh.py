@@ -36,14 +36,13 @@ appended to the main solution array (nx8 once completed) which is then outputed
 """
 
 ### Specify case details
-patient='01'
-patientlung='right'
+patient='03'
+patientlung='left'
 
 # right: 01, 06, 08
 # left: 05, 07, 09
 
-basepath='p'+patient+'/'
-#basepath='./LungSegmentations/seg_bococ_p'+patient+'/'
+basepath='./LungSegmentations/seg_bococ_p'+patient+'/'
 ### Required files (nifti images, mesh)
 nifti_ct_file = basepath+patient+'_ct0.nii'
 nifti_rd_files = [basepath+patient+'_ct0_phase_I.nii',basepath+patient+'_ct0_phase_II.nii']
@@ -113,6 +112,8 @@ nodes=np.append(nodes,hf,axis=1)
 ### RADIATION ###
 
 img=0
+rd0=np.zeros((nodes_size,1), dtype=np.double)
+rd1=np.zeros((nodes_size,1), dtype=np.double)
 # Load radiation dose images file
 for nifti_rd_file in nifti_rd_files:
 
@@ -141,13 +142,6 @@ for nifti_rd_file in nifti_rd_files:
     for idx, node in enumerate(nodes):
         v_pos = rd_invaff_mat.dot(np.append(node[:3],1))
         rd[idx] = rd_na[tuple(v_pos[:3].astype(int))]
-        # When converting RT DICOM image to nifty using dcm2niix, it was found
-        # that it required scalling of the pixel values in order to match Slicer
-        # data (scalling was different for some images). 
-        if img == 0:
-            rd[idx] /= 198.467765570619
-        elif img == 1:
-            rd[idx] /= 694.485345995242 # 198.795960642154 # for p08
         if rd[idx] < 0:
             print('WARNING: Radiation value for node '+str(idx)+' is '+str(rd[idx])+' (negative). Set to 0')
             rd[idx]=0
@@ -155,6 +149,10 @@ for nifti_rd_file in nifti_rd_files:
     print('[RD image '+str(img)+'] Maximum value:', np.max(rd))
     print('[RD image '+str(img)+'] Minimum value:', np.min(rd))
     nodes=np.append(nodes,rd,axis=1)
+    if img == 0:
+        rd0 = rd
+    elif img == 1:
+        rd1 = rd
     img+=1
 
 # Code for creating mock radiation field (not used)
@@ -215,16 +213,30 @@ else:
 #print('[TM image] Minimum value:', np.min(tm))
 nodes=np.append(nodes,tm,axis=1)
 
-### Output to file
-nodal_field_file=out_dir+name+'-nodal_field.dat'
-f_out = open(nodal_field_file, 'w')
-f_out.write('4\n\n')
-f_out.write('v02 a01 a02 v00\n\n')
-for node in nodes:
-    f_out.write(' '.join(map(str,node[3:]))+'\n')
-    # output node coordinates as well
-    #f_out.write(' '.join(map(str,node))+'\n')
-f_out.close()
+### Output to file (select if feb3 or rcdFE)
+feb3=False
+if feb3:
+    nodal_field_file=out_dir+name+'-nodal_field.dat'
+    f_out = open(nodal_field_file, 'w')
+    f_out.write('4\n\n')
+    f_out.write('v02 a01 a02 v00\n\n')
+    for node in nodes:
+        f_out.write(' '.join(map(str,node[3:]))+'\n')
+        # output node coordinates as well
+        #f_out.write(' '.join(map(str,node))+'\n')
+    f_out.close()
+else:
+    nodal_field_file='p'+patient+'_ct0-nodal_field.dat'
+    # Create a new array with the third column as 0.0
+    output_array = np.column_stack((hf, tm, np.zeros_like(hf)))
+    # Save the array to a file
+    np.savetxt(nodal_field_file, output_array)
 
-print("The nodal field has been successfully output at", nodal_field_file)
+    nodal_RT_field_file='p'+patient+'_ct0-nodal_field-RT.dat'
+    # Create a new array with the third column as 0.0
+    output_array = np.column_stack((rd0, rd1))
+    # Save the array to a file
+    np.savetxt(nodal_RT_field_file, output_array)
+
+print("The nodal field has been successfully output at", nodal_field_file, "and", nodal_RT_field_file)
 if warnings: print('There have been '+str(warnings)+' WARNINGS')
