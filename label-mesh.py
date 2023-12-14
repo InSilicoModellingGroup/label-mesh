@@ -9,6 +9,7 @@ import os.path
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from mpl_toolkits.mplot3d import axes3d
+import sys
 
 """ 
 
@@ -36,8 +37,10 @@ appended to the main solution array (nx8 once completed) which is then outputed
 """
 
 ### Specify case details
-patient='03'
-patientlung='left'
+if len(sys.argv)<2:
+     print("Please provide patient number (e.g. 05) as argument")
+     exit(1);
+patient=sys.argv[1]
 
 # right: 01, 06, 08
 # left: 05, 07, 09
@@ -47,10 +50,10 @@ basepath='./LungSegmentations/seg_bococ_p'+patient+'/'
 nifti_ct_file = basepath+patient+'_ct0.nii'
 nifti_rd_files = [basepath+patient+'_ct0_phase_I.nii',basepath+patient+'_ct0_phase_II.nii']
 nifti_tm_file = basepath+patient+'_ct0_tumour.nii'
-msh_file = basepath+'seg_bococ_p'+patient+'_ct0_'+patientlung+'.msh'
+msh_file = basepath+'/'+patient+'_ct0_lung.msh'
 
 ### Case name (used in output files)
-name='p'+patient+'_ct0_'+patientlung
+name='p'+patient+'_ct0'
 ### Specify output
 out_dir='' 
 warnings=0
