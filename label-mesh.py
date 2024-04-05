@@ -31,7 +31,7 @@ appended to the main solution array (nx8 once completed) which is then outputed
 1. Tumour and necrotic regions are populated first according to segmentation
 2. Host cells are all the remaining nodes
 3. Vascular cells are in all regions except in the necrotic region
-4. Oedema region is set according to segmentation and overlap with other cell regions
+4. Oedema region is set according to segmentation and can overlap with other cell regions
 
 > MRI values is obtained from the T1 weighted image in the same way
 
@@ -109,7 +109,7 @@ img_cancer = nib.as_closest_canonical(img_cancer)
 
 if img_brain.shape != img_cancer.shape or img_brain.header.get_zooms() != img_cancer.header.get_zooms():
     print("ERROR: Brain and cancer images do not match")
-    exit()    
+    exit()
     
 ### Obtain inverse affine matrix
 brain_invaff_mat=np.linalg.inv(img_brain.affine)
@@ -155,6 +155,7 @@ for idx, node in enumerate(nodes):
                 tum[idx]=0.9
                 hos[idx]=0
                 nec[idx]=0
+                vsc[idx]=0.1
                 break
             elif label == 1:
                 nec[idx]=1
@@ -170,6 +171,9 @@ for idx, node in enumerate(nodes):
     if hos[idx] + tum[idx] + vsc[idx] + nec[idx] > 1.0:
         print("ERROR: Total volume fraction is greater than 1. ",hos[idx] + tum[idx] + nec[idx] )
         exit()
+    if hos[idx] + tum[idx] + vsc[idx] + nec[idx] < 1.0 - 1e-6:
+        print("ERROR: Total volume fraction is less than 1. ",hos[idx] + tum[idx] + nec[idx] )
+        exit()    
 
 nodes=np.concatenate((nodes,hos,tum,nec,vsc,oed),axis=1)
 
@@ -296,7 +300,7 @@ ele_labels=np.zeros((elements_size,1),dtype=int)
 
 relabeled=0
 for idx, element in enumerate(elements):    
-    if element[0] == 4:
+    if element[0] == 4: # element is of type tetrahedron
         #print("Element", idx+1, "is", element)
         centroid = np.zeros(3,dtype=float)
         for i in range(1,5):
@@ -305,6 +309,7 @@ for idx, element in enumerate(elements):
         centroid /= 4.0
         v_pos = brain_invaff_mat.dot(np.append(centroid,1))
         label = brain_na[tuple(v_pos[:3].astype(int))]
+        # ventricles = 10, WM= 30 , GM =40
         if label == 0 or label == 10 or label == 50:
             label = 40 # Set boundary elements to grey matter
             relabeled+=1
