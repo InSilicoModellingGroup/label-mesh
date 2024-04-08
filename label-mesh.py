@@ -203,7 +203,7 @@ else:
         v_pos = mri_invaff_mat.dot(np.append(node[:3],1))
         mri[idx] = mri_na[tuple(v_pos[:3].astype(int))]
         if mri[idx] < -1000:
-            print('WARNING: Hounsfield value for node '+str(idx)+' is '+str(rd[idx])+'. Set to -999.999.')
+            print('WARNING: Hounsfield value for node '+str(idx)+' is '+str(mri[idx])+'. Set to -999.999.')
             mri[idx]=-999.999
             warnings+=1
             
@@ -247,7 +247,7 @@ else:
         # that it required scalling of the pixel values in order to match Slicer
         # data (scalling was different for some images). 
         if rtd[idx] < 0:
-            print('WARNING: Radiation value for node '+str(idx)+' is '+str(rd[idx])+' (negative). Set to 0.')
+            print('WARNING: Radiation value for node '+str(idx)+' is '+str(rtd[idx])+' (negative). Set to 0.')
             rtd[idx]=0
             warnings+=1
 
