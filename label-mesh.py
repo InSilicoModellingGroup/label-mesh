@@ -45,20 +45,36 @@ whether they belong to the region of white matter (30) or grey matter (40).
 """
 
 ### Specify case details
-basepath='RP02/'
+basepath='ProteasBrainData/RP04/'
 nifti_brain = basepath+'brain_mask.nii'
 nifti_cancer = basepath+'tumour_mask.nii'
 nifti_brain_MRI = basepath+'brain_t1.nii'
 nifti_brain_RT = basepath+'brain_RD.nii'
 
-msh_file = basepath+'seg_brain.msh'
-mesh_char_len = 3.5
+msh_file = basepath+'RP04a_seg_brain.msh'
 
 ### Case name (used in output files)
-name='RP02-test'
+name = os.path.splitext(os.path.basename(msh_file))[0]
+
 ### Specify output
 out_dir='' 
 warnings=0
+
+### Specify labels
+label_nec = 1
+label_tum = 2
+label_oed = 3
+
+### Specify cell concentration values
+conc_hos = 0.7
+conc_tum = 0.9
+conc_vsc = 0.1
+conc_nec = 1.0
+conc_oed = 1.0
+
+### Specify whether to consider cube around node and lenght of cube edge
+USE_CUBE = True
+mesh_char_len = 1.0
 
 ### Obtain nodes coordinates from msh file
 f_msh = open(msh_file,'r')
@@ -125,54 +141,73 @@ cancer_na = img_cancer.get_fdata()
 
 ### Populate variables value for each node
 tum,hos,nec,vsc,oed=[np.zeros((nodes_size,1)) for _ in range(5)]
-hos.fill(0.9)
-vsc.fill(0.1)
+hos.fill(conc_hos)
+vsc.fill(conc_vsc)
 
-### Labels: 1=nec, 2=oed, 4=tum
+### Labels: 1=nec, 2=tum, 3=oed
 for idx, node in enumerate(nodes):
-    # Create a cube around each node of size mesh_char_len and check each vertix
-    # of this cube
-    cube_sizes = np.array([0.05*mesh_char_len,0.5*mesh_char_len,mesh_char_len])
-    for cube_size in cube_sizes:
-        cube_vers = np.full((8,3),node[:3])
-        for i in range(4):
-            cube_vers[i][0]   += -0.5*cube_size
-            cube_vers[i+4][0] +=  0.5*cube_size
-        for i in range(2):
-            cube_vers[i][1]   += -0.5*cube_size
-            cube_vers[i+2][1] +=  0.5*cube_size
-            cube_vers[i+4][1] += -0.5*cube_size
-            cube_vers[i+6][1] +=  0.5*cube_size
-        for i in range(8):
-            if i % 2 == 0:
-                cube_vers[i][2] += -0.5*cube_size
-            else:
-                cube_vers[i][2] +=  0.5*cube_size
-        for ver in cube_vers:
-            v_pos = cancer_invaff_mat.dot(np.append(ver,1))
-            label = cancer_na[tuple(v_pos[:3].astype(int))]
-            if label == 4:
-                tum[idx]=0.9
+    if not USE_CUBE:
+        v_pos = cancer_invaff_mat.dot(np.append(node[:3],1))
+        label = cancer_na[tuple(v_pos[:3].astype(int))]
+        if label == label_nec:
+            nec[idx]=conc_nec
+            hos[idx]=0
+            tum[idx]=0
+            vsc[idx]=0
+        elif label == label_tum:
+            tum[idx]=conc_tum
+            hos[idx]=0
+            nec[idx]=0
+            vsc[idx]=conc_vsc
+        if label == label_oed:
+            oed[idx]=conc_oed
+    if USE_CUBE:
+        # Create a series of cube around each node of increasing size
+        # (mesh_char_len) and check each vertix of this cube.
+        # If a node is set to tum or nec, the loop stops
+        cube_sizes = np.array([mesh_char_len,2*mesh_char_len])
+        for cube_size in cube_sizes:
+            cube_vers = np.full((8,3),node[:3])
+            for i in range(4):
+                cube_vers[i][0]   += -0.5*cube_size
+                cube_vers[i+4][0] +=  0.5*cube_size
+            for i in range(2):
+                cube_vers[i][1]   += -0.5*cube_size
+                cube_vers[i+2][1] +=  0.5*cube_size
+                cube_vers[i+4][1] += -0.5*cube_size
+                cube_vers[i+6][1] +=  0.5*cube_size
+            for i in range(8):
+                if i % 2 == 0:
+                    cube_vers[i][2] += -0.5*cube_size
+                else:
+                    cube_vers[i][2] +=  0.5*cube_size
+            vert_tum = vert_nec = 0
+            for ver in cube_vers:
+                v_pos = cancer_invaff_mat.dot(np.append(ver,1))
+                label = cancer_na[tuple(v_pos[:3].astype(int))]
+                if label == label_nec:
+                    vert_nec += 1
+                elif label == label_tum:
+                    vert_tum += 1
+                if label == label_oed:
+                    oed[idx]=conc_oed
+            if vert_nec > 0:
+                nec[idx]=conc_nec
                 hos[idx]=0
-                nec[idx]=0
-                vsc[idx]=0.1
-                break
-            elif label == 1:
-                nec[idx]=1
-                hos[idx]=0
+                tum[idx]=0
                 vsc[idx]=0
                 break
-            else:
-                if label == 2:
-                    # print(idx,node,v_pos[:3].astype(int),label)
-                    oed[idx]=1
-        if tum[idx] > 0.9-1e-6:
-            break
+            elif vert_tum > 0:
+                tum[idx]=conc_tum
+                hos[idx]=0
+                nec[idx]=0
+                vsc[idx]=conc_vsc
+                break
     if hos[idx] + tum[idx] + vsc[idx] + nec[idx] > 1.0:
-        print("ERROR: Total volume fraction is greater than 1. ",hos[idx] + tum[idx] + nec[idx] )
+        print("ERROR: Total volume fraction is greater than 1. ",hos[idx] + tum[idx] + nec[idx] + vsc[idx] )
         exit()
-    if hos[idx] + tum[idx] + vsc[idx] + nec[idx] < 1.0 - 1e-6:
-        print("ERROR: Total volume fraction is less than 1. ",hos[idx] + tum[idx] + nec[idx] )
+    if hos[idx] + tum[idx] + vsc[idx] + nec[idx] < 0.7:
+        print("ERROR: Total volume fraction is very small ",hos[idx] + tum[idx] + nec[idx] + vsc[idx] )
         exit()    
 
 nodes=np.concatenate((nodes,hos,tum,nec,vsc,oed),axis=1)
