@@ -28,10 +28,16 @@ appended to the main solution array (nx8 once completed) which is then outputed
 (only variable values are output, not coordinates).
 
 > Variable values are set as follows
-1. Tumour and necrotic regions are populated first according to segmentation
+
+1. Tumour and necrotic regions are populated using cubes of increasing edge size
+   around each node. If any vertix of the cube is in the necrotic region, it is
+   marked as necrotic. If not, and any vertix is in the tumour region then it is
+   marked as tumour. The edge size is a multiple of the variable
+   mesh_char_length.
 2. Host cells are all the remaining nodes
-3. Vascular cells are in all regions except in the necrotic region
-4. Oedema region is set according to segmentation and can overlap with other cell regions
+3. Vascular cells are 0.1 in tumour region, 0.05 in oedema and 0.03 in the rest
+   of the regions except in the necrotic region
+4. Oedema region is set according to segmentation (also uses cubes)  and can overlap with other cell regions
 
 > MRI values is obtained from the T1 weighted image in the same way
 
@@ -45,13 +51,13 @@ whether they belong to the region of white matter (30) or grey matter (40).
 """
 
 ### Specify case details
-basepath='ProteasBrainData/RP04/'
+basepath='ProteasBrainData/RP01/'
 nifti_brain = basepath+'brain_mask.nii'
 nifti_cancer = basepath+'tumour_mask.nii'
 nifti_brain_MRI = basepath+'brain_t1.nii'
 nifti_brain_RT = basepath+'brain_RD.nii'
 
-msh_file = basepath+'RP04a_seg_brain.msh'
+msh_file = basepath+'RPRO-01a_Brain.msh'
 
 ### Case name (used in output files)
 name = os.path.splitext(os.path.basename(msh_file))[0]
@@ -68,7 +74,9 @@ label_oed = 3
 ### Specify cell concentration values
 conc_hos = 0.7
 conc_tum = 0.9
-conc_vsc = 0.1
+conc_vsc_hos = 0.03
+conc_vsc_oed = 0.05
+conc_vsc_tum = 0.10
 conc_nec = 1.0
 conc_oed = 1.0
 
@@ -142,7 +150,7 @@ cancer_na = img_cancer.get_fdata()
 ### Populate variables value for each node
 tum,hos,nec,vsc,oed=[np.zeros((nodes_size,1)) for _ in range(5)]
 hos.fill(conc_hos)
-vsc.fill(conc_vsc)
+vsc.fill(conc_vsc_hos)
 
 ### Labels: 1=nec, 2=tum, 3=oed
 for idx, node in enumerate(nodes):
@@ -158,9 +166,10 @@ for idx, node in enumerate(nodes):
             tum[idx]=conc_tum
             hos[idx]=0
             nec[idx]=0
-            vsc[idx]=conc_vsc
+            vsc[idx]=conc_vsc_tum
         if label == label_oed:
             oed[idx]=conc_oed
+            vsc[idx]=conc_vsc_oed
     if USE_CUBE:
         # Create a series of cube around each node of increasing size
         # (mesh_char_len) and check each vertix of this cube.
@@ -191,6 +200,7 @@ for idx, node in enumerate(nodes):
                     vert_tum += 1
                 if label == label_oed:
                     oed[idx]=conc_oed
+                    vsc[idx]=conc_vsc_oed
             if vert_nec > 0:
                 nec[idx]=conc_nec
                 hos[idx]=0
@@ -201,7 +211,7 @@ for idx, node in enumerate(nodes):
                 tum[idx]=conc_tum
                 hos[idx]=0
                 nec[idx]=0
-                vsc[idx]=conc_vsc
+                vsc[idx]=conc_vsc_tum
                 break
     if hos[idx] + tum[idx] + vsc[idx] + nec[idx] > 1.0:
         print("ERROR: Total volume fraction is greater than 1. ",hos[idx] + tum[idx] + nec[idx] + vsc[idx] )
