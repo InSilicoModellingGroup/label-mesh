@@ -14,13 +14,11 @@ from mpl_toolkits.mplot3d import axes3d
 This script creates a nodes array nx3 (n: number of nodes) of nodal
 coordinates or element centroids.
 
-In the case of nodal points, it appends columns for 5 variables used in the
+In the case of nodal points, it appends columns for the 3 variables used in the
 PROTEAS brain model. The variables are:
-1. Healthy cells
-2. Tumour cells
-3. Necrotic cells
-4. Vascular cells
-5. Oedema
+1. Tumour cells
+2. Necrotic cells
+3. Oedema
 
 The variable values are obtained from corresponding images by quering the pixel
 value at each nodal coordinate. These are stored into an array (size n) and
@@ -34,30 +32,27 @@ appended to the main solution array (nx8 once completed) which is then outputed
    marked as necrotic. If not, and any vertix is in the tumour region then it is
    marked as tumour. The edge size is a multiple of the variable
    mesh_char_length.
-2. Host cells are all the remaining nodes
-3. Vascular cells are 0.1 in tumour region, 0.05 in oedema and 0.03 in the rest
-   of the regions except in the necrotic region
-4. Oedema region is set according to segmentation (also uses cubes)  and can overlap with other cell regions
+2. Oedema region is set according to segmentation (also uses cubes)  and can overlap with other cell regions
 
-> MRI values is obtained from the T1 weighted image in the same way
+> [DEPRECATED] MRI values is obtained from the T1 weighted image in the same way
 
 > Radiation field is obtained from separate image file in the same way
 
 In the case of elements, the centroid of each element is computed from the nodal
 coordinates and the appropriate brain region (white/grey matter) is assigned. A
-new mesh is output in the end where the elements are labeled according to
+new mesh is output in the end where the elements are labelled according to
 whether they belong to the region of white matter (30) or grey matter (40).
 
 """
 
 ### Specify case details
-basepath='ProteasBrainData/RP01/'
+basepath='ProteasBrainMasksSTLs/RP04/'
 nifti_brain = basepath+'brain_mask.nii'
 nifti_cancer = basepath+'tumour_mask.nii'
 nifti_brain_MRI = basepath+'brain_t1.nii'
 nifti_brain_RT = basepath+'brain_RD.nii'
 
-msh_file = basepath+'RPRO-01a_Brain.msh'
+msh_file = basepath+'RP04a_brain.msh'
 
 ### Case name (used in output files)
 name = os.path.splitext(os.path.basename(msh_file))[0]
@@ -72,11 +67,7 @@ label_tum = 2
 label_oed = 3
 
 ### Specify cell concentration values
-conc_hos = 0.7
-conc_tum = 0.9
-conc_vsc_hos = 0.03
-conc_vsc_oed = 0.05
-conc_vsc_tum = 0.10
+conc_tum = 1.0
 conc_nec = 1.0
 conc_oed = 1.0
 
@@ -148,9 +139,7 @@ cancer_na = img_cancer.get_fdata()
 #plt.show()
 
 ### Populate variables value for each node
-tum,hos,nec,vsc,oed=[np.zeros((nodes_size,1)) for _ in range(5)]
-hos.fill(conc_hos)
-vsc.fill(conc_vsc_hos)
+tum,nec,oed=[np.zeros((nodes_size,1)) for _ in range(3)]
 
 ### Labels: 1=nec, 2=tum, 3=oed
 for idx, node in enumerate(nodes):
@@ -159,17 +148,12 @@ for idx, node in enumerate(nodes):
         label = cancer_na[tuple(v_pos[:3].astype(int))]
         if label == label_nec:
             nec[idx]=conc_nec
-            hos[idx]=0
             tum[idx]=0
-            vsc[idx]=0
         elif label == label_tum:
             tum[idx]=conc_tum
-            hos[idx]=0
             nec[idx]=0
-            vsc[idx]=conc_vsc_tum
         if label == label_oed:
             oed[idx]=conc_oed
-            vsc[idx]=conc_vsc_oed
     if USE_CUBE:
         # Create a series of cube around each node of increasing size
         # (mesh_char_len) and check each vertix of this cube.
@@ -200,61 +184,55 @@ for idx, node in enumerate(nodes):
                     vert_tum += 1
                 if label == label_oed:
                     oed[idx]=conc_oed
-                    vsc[idx]=conc_vsc_oed
             if vert_nec > 0:
                 nec[idx]=conc_nec
-                hos[idx]=0
                 tum[idx]=0
-                vsc[idx]=0
                 break
             elif vert_tum > 0:
                 tum[idx]=conc_tum
-                hos[idx]=0
                 nec[idx]=0
-                vsc[idx]=conc_vsc_tum
                 break
-    if hos[idx] + tum[idx] + vsc[idx] + nec[idx] > 1.0:
-        print("ERROR: Total volume fraction is greater than 1. ",hos[idx] + tum[idx] + nec[idx] + vsc[idx] )
+    if tum[idx] + nec[idx] > 1.0:
+        print("ERROR: Total volume fraction is greater than 1. ", tum[idx] + nec[idx] )
         exit()
-    if hos[idx] + tum[idx] + vsc[idx] + nec[idx] < 0.7:
-        print("ERROR: Total volume fraction is very small ",hos[idx] + tum[idx] + nec[idx] + vsc[idx] )
-        exit()    
 
-nodes=np.concatenate((nodes,hos,tum,nec,vsc,oed),axis=1)
+nodes=np.concatenate((nodes,tum,nec,oed),axis=1)
 
 ### MRI ###
+SET_MRI=False
 
-mri=np.zeros((nodes_size,1), dtype=np.double)
-if nifti_brain_MRI is None:
-    print('WARNING: MRI image not provided. MRI values set to linear dependance on position (x+y+z).')
-    warnings+=1
-    for idx, node in enumerate(nodes):
-        mri[idx] = node[0]+node[1]+node[2]
-else:
-    img_MRI = nib.load(nifti_brain_MRI)
-    # Convert the voxel orientation to RAS
-    img_MRI = nib.as_closest_canonical(img_MRI)
+if SET_MRI:
+    mri=np.zeros((nodes_size,1), dtype=np.double)
+    if nifti_brain_MRI is None:
+        print('WARNING: MRI image not provided. MRI values set to linear dependance on position (x+y+z).')
+        warnings+=1
+        for idx, node in enumerate(nodes):
+            mri[idx] = node[0]+node[1]+node[2]
+    else:
+        img_MRI = nib.load(nifti_brain_MRI)
+        # Convert the voxel orientation to RAS
+        img_MRI = nib.as_closest_canonical(img_MRI)
 
-    print('[MRI image] Voxel orientation is '+str(nib.aff2axcodes(img_MRI.affine)))
-    print('[MRI image] Voxel size', img_MRI.header.get_zooms())
-    mri_aff_mat = img_MRI.affine
-    mri_invaff_mat=np.linalg.inv(mri_aff_mat)
+        print('[MRI image] Voxel orientation is '+str(nib.aff2axcodes(img_MRI.affine)))
+        print('[MRI image] Voxel size', img_MRI.header.get_zooms())
+        mri_aff_mat = img_MRI.affine
+        mri_invaff_mat=np.linalg.inv(mri_aff_mat)
 
-    # Get data from image to a numpy array
-    mri_na = img_MRI.get_fdata()
-    print('[MRI image] Dimensions', img_MRI.shape)
-
-    for idx, node in enumerate(nodes):
-        v_pos = mri_invaff_mat.dot(np.append(node[:3],1))
-        mri[idx] = mri_na[tuple(v_pos[:3].astype(int))]
-        if mri[idx] < -1000:
-            print('WARNING: Hounsfield value for node '+str(idx)+' is '+str(mri[idx])+'. Set to -999.999.')
-            mri[idx]=-999.999
-            warnings+=1
-            
-print('[MRI image] Maximum value:', np.max(mri))
-print('[MRI image] Minimum value:', np.min(mri))
-nodes=np.append(nodes,mri,axis=1)
+        # Get data from image to a numpy array
+        mri_na = img_MRI.get_fdata()
+        print('[MRI image] Dimensions', img_MRI.shape)
+        
+        for idx, node in enumerate(nodes):
+            v_pos = mri_invaff_mat.dot(np.append(node[:3],1))
+            mri[idx] = mri_na[tuple(v_pos[:3].astype(int))]
+            if mri[idx] < -1000:
+                print('WARNING: Hounsfield value for node '+str(idx)+' is '+str(mri[idx])+'. Set to -999.999.')
+                mri[idx]=-999.999
+                warnings+=1
+                
+    print('[MRI image] Maximum value:', np.max(mri))
+    print('[MRI image] Minimum value:', np.min(mri))
+    nodes=np.append(nodes,mri,axis=1)
 
 ### RADIATION ###
 
@@ -323,76 +301,91 @@ nodes=np.append(nodes,rtd,axis=1)
 
 nodal_field_file=out_dir+name+'-nodal_field.dat'
 f_out = open(nodal_field_file, 'w')
-f_out.write('# hos tum nec vsc oed\n')
+f_out.write('# tum nec oed\n')
 for node in nodes:
-    f_out.write(' '.join(map(str,node[3:8]))+'\n')
+    f_out.write(' '.join(map(str,node[3:6]))+'\n')
     # output node coordinates as well
     #f_out.write(' '.join(map(str,node))+'\n')
 f_out.close()
 
 nodal_field_file_aux=out_dir+name+'-nodal_field_aux.dat'
 f_out = open(nodal_field_file_aux, 'w')
-f_out.write('# mri rtd\n')
+if SET_MRI:
+    f_out.write('# mri rtd\n')
+else:
+    f_out.write('# rtd\n')
 for node in nodes:
-    f_out.write(' '.join(map(str,node[8:]))+'\n')
+    f_out.write(' '.join(map(str,node[6:]))+'\n')
 f_out.close()
 
 print("The nodal field has been successfully output at", nodal_field_file, "and", nodal_field_file_aux)
 
 ### Label elements
 
-ele_labels=np.zeros((elements_size,1),dtype=int)
+SET_ELEMENT_LABELLING=True
 
-relabeled=0
-for idx, element in enumerate(elements):    
-    if element[0] == 4: # element is of type tetrahedron
-        #print("Element", idx+1, "is", element)
-        centroid = np.zeros(3,dtype=float)
-        for i in range(1,5):
-            # print("Node ", element[i], "has coordinates", nodes[element[i]-1,:3]) # Important: In .msh files, node enumeration starts from 1 but here it starts from 0
-            centroid += nodes[element[i]-1,:3] 
-        centroid /= 4.0
-        v_pos = brain_invaff_mat.dot(np.append(centroid,1))
-        label = brain_na[tuple(v_pos[:3].astype(int))]
-        # ventricles = 10, WM= 30 , GM =40
-        if label == 0 or label == 10 or label == 50:
-            label = 40 # Set boundary elements to grey matter
-            relabeled+=1
-        ele_labels[idx] = label
-        #print(idx+1,label)
-    elif element[0] == 2:
-        continue
-    else:
-        print("ERROR: Unexpected element type during element labeling.", element[0] )
-        exit()        
+if SET_ELEMENT_LABELLING:
+    ele_labels=np.zeros((elements_size,1),dtype=int)
 
-if relabeled > 0:
-    print('WARNING:', relabeled, 'elements did not have grey/white matter label and have been relabeled to grey matter')
-    warnings+=1
+    relabelled=0
+    for idx, element in enumerate(elements):
+        if element[0] == 4: # element is of type tetrahedron
+            #print("Element", idx+1, "is", element)
+            centroid = np.zeros(3,dtype=float)
+            for i in range(1,5):
+                # print("Node ", element[i], "has coordinates", nodes[element[i]-1,:3]) # Important: In .msh files, node enumeration starts from 1 but here it starts from 0
+                centroid += nodes[element[i]-1,:3] 
+            centroid /= 4.0
+            v_pos = brain_invaff_mat.dot(np.append(centroid,1))
+            label = brain_na[tuple(v_pos[:3].astype(int))]
+            # ventricles = 10, WM= 30 , GM =40
+            if label == 0 or label == 10 or label == 50:
+                label = 40 # Set boundary elements to grey matter
+                relabelled+=1
+            ele_labels[idx] = label
+            #print(idx+1,label)
+        elif element[0] == 2:
+            continue
+        else:
+            print("ERROR: Unexpected element type during element labeling.", element[0] )
+            exit()        
 
-elements=np.append(elements,ele_labels,axis=1)
+    if relabelled > 0:
+        print('WARNING:', relabelled, 'elements did not have grey/white matter label and have been relabelled to grey matter')
+        warnings+=1
 
-### Output new mesh file (with labels)
+    elements=np.append(elements,ele_labels,axis=1)
 
-labeled_msh_file=out_dir+name+'-labeled_brain.msh'
-f_out = open(labeled_msh_file, 'w')
-f_out.write('$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n')
-f_out.write(str(nodes_size)+'\n')
-for idx, node in enumerate(nodes):
-    f_out.write(str(idx+1)+' '+' '.join(map(str,node[:3]))+'\n')
-f_out.write('$EndNodes\n$Elements\n')
-f_out.write(str(elements_size)+'\n')
-for idx, element in enumerate(elements):
-    if element[0] == 2:
-        f_out.write(str(idx+1)+' 2 2 2000 1 '+' '.join(map(str,element[1:4]))+'\n')
-    elif element[0] == 4:
-        f_out.write(str(idx+1)+' 4 2 '+str(element[5])+' 1 '+' '.join(map(str,element[1:5]))+'\n')
-    else:
-       print("ERROR: Unexpected element type during labeled mesh output.", element[0] )
-       exit()
-f_out.write('$EndElements\n')
-f_out.close()
+    ### Output new mesh file (with labels)
 
-print("The labeled mesh file has been successfully output at", labeled_msh_file)
+    labelled_msh_file=out_dir+name+'-labelled.msh'
+    f_out = open(labelled_msh_file, 'w')
+    f_out.write('$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n')
+    f_out.write(str(nodes_size)+'\n')
+    for idx, node in enumerate(nodes):
+        f_out.write(str(idx+1)+' '+' '.join(map(str,node[:3]))+'\n')
+    f_out.write('$EndNodes\n$Elements\n')
+    f_out.write(str(elements_size)+'\n')
+    for idx, element in enumerate(elements):
+        if element[0] == 2:
+            f_out.write(str(idx+1)+' 2 2 2000 1 '+' '.join(map(str,element[1:4]))+'\n')
+        elif element[0] == 4:
+            f_out.write(str(idx+1)+' 4 2 '+str(element[5])+' 1 '+' '.join(map(str,element[1:5]))+'\n')
+        else:
+            print("ERROR: Unexpected element type during labelled mesh output.", element[0] )
+            exit()
+    f_out.write('$EndElements\n')
+    f_out.close()
+
+    print("The labelled mesh file has been successfully output at", labelled_msh_file)
+else:
+    new_msh_file = os.path.basename(msh_file)
+
+    # Open the new file for writing
+    with open(new_msh_file, 'w') as new_file:
+        new_file.writelines(lines_msh)
+
+    print(f"Mesh saved as {new_msh_file} in the current directory.")
+
     
 if warnings: print('There have been '+str(warnings)+' WARNINGS')
