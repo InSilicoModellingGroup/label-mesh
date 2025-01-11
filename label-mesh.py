@@ -6,6 +6,7 @@ import nibabel as nib
 import numpy as np
 import math
 import os.path
+import sys
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from mpl_toolkits.mplot3d import axes3d
@@ -45,14 +46,17 @@ whether they belong to the region of white matter (30) or grey matter (40).
 
 """
 
-### Specify case details
-basepath='ProteasBrainMasksSTLs/RP04/'
-nifti_brain = basepath+'brain_mask.nii'
-nifti_cancer = basepath+'tumour_mask.nii'
-nifti_brain_MRI = basepath+'brain_t1.nii'
-nifti_brain_RT = basepath+'brain_RD.nii'
+if len(sys.argv) != 2:
+    print("Usage: python label-mesh.py <mesh_file> [Required masks should be placed in directory of mesh]")
+    sys.exit(1)
 
-msh_file = basepath+'RP04a_brain.msh'
+### Specify case details
+msh_file = sys.argv[1]
+dirpath=os.path.dirname(msh_file)
+nifti_brain = dirpath+'/brain_mask.nii'
+nifti_cancer = dirpath+'/tumour_mask.nii'
+nifti_brain_MRI = dirpath+'/brain_t1.nii'
+nifti_brain_RT = dirpath+'/brain_RD.nii'
 
 ### Case name (used in output files)
 name = os.path.splitext(os.path.basename(msh_file))[0]
